@@ -1,0 +1,175 @@
+---
+title: "Weight Lifting Exercises (WLE)"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r ,include=FALSE}
+#Packages
+library(caret)
+library(AppliedPredictiveModeling)
+library(gplots)
+library(data.table)
+library(gridExtra)
+library(dplyr)
+library(rpart)
+library(rattle)
+
+
+set.seed(3433)
+```
+
+
+## Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks.
+
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. The goal of our project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. We use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict with. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: <http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har> (see the section on the Weight Lifting Exercise Dataset).
+
+This report describes how I built the model, how I used cross-validation and what I think the expected out of sample error is. The prediction model will also be used to predict 20 different test cases.
+
+
+##Data
+
+The complete dataset is available on this website : <http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har>.
+For this project assignement two differents datasets are also provided : the training and the test set. We are asked to use the training set to build our model.
+
+```{r ,echo=FALSE,warning=FALSE}
+setwd(dir="/Users/natacha/Documents/Coursera/M_Learning")
+#Data
+
+  #Dataset
+data2<-fread("/Users/natacha/Documents/Coursera/M_Learning/WearableComputing_weight_lifting_exercises_biceps_curl_variations.csv")
+
+  #Test dataset
+test<-read.csv("pml-testing.csv")
+
+ #Train dataset
+train<-read.csv("pml-training.csv")
+```
+
+
+##Data cleaning
+
+The data cleaning process includes:
+removing the variables without data values, the variables with irrelevant features and keeping only the numeric variables. At the end of the process I get a dataset with 54 variables in total.
+
+```{r ,echo=FALSE,warning=FALSE}
+
+#Remove columns with NA
+var_wNA <- colSums(is.na(train)) == 0 
+b <- as_tibble(train[,var_wNA])
+
+#Remove irrelevant features for prediction
+irrf <- select(b, -c(X, user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window, num_window)) 
+
+#Keep numeric variables
+num <- sapply(irrf,is.numeric)
+cnum <- colnames(irrf[num])
+final <- select(irrf, cnum)
+
+#Keep class and username variables 
+cleantrain <- mutate(final, class=b$classe, user_name=b$user_name)
+
+
+#Number of rows and columns
+nr<-nrow(cleantrain)
+nc<-ncol(cleantrain)
+```
+
+This dataset has `r nr` rows and `r nc` columns in total.
+
+
+
+## Prediction model and Cross-validation
+
+To begin with I create a prediction model using CART modeling via **caret** R package (the **rpart** method within the **train** function is used). This method is a recursive partitioning which help us to explore the structure of the set of data while developing easy to visualize decision rules for predicting the categorical outcome (classification tree). In my case I will predict the class variable by iteratively splitting variables into the class and thus building a classification tree.
+
+The cross-validation method is used in order to evaluate the model. The approach is to split the training set into the training and the test set, to build a model on the training set and then to evaluate it on the test set. I use this method for picking the variables to include and the prediction functions to use in a model. 
+
+
+```{r , warning=FALSE}
+#Create training and testing datasets
+inTrain = createDataPartition(cleantrain$class, p = 0.80)[[1]]
+training = cleantrain[inTrain,]
+testing = cleantrain[-inTrain,]
+
+
+#Fit predictive models
+modrp<-train(class ~ ., method = "rpart", data=training,trControl=trainControl(method="none"),tuneGrid=data.frame(cp=0))
+
+#print(modrp$finalModel)
+
+#Models predictions on the testing set
+prdrp <- predict(modrp, testing)
+
+
+  #Plot tree
+#fancyRpartPlot(modrp$finalModel)
+
+
+```
+
+This classification tree is not displayed as it is not easy to read it.
+
+## Expected out of sample error 
+
+As the outcome is categorical, I use two different measures which are the accuracy that I get on a new data set. The accuracy is the number that you get correct. The Kappa is also used, it is a measure of concordance.
+
+```{r , echo=FALSE,warning=FALSE}
+
+#Confusion matrix
+  #Rpart
+cm <- confusionMatrix(prdrp, testing$class)
+print(cm)
+
+```
+
+The accuracy is equal to `r round(cm$overall[1],2)` so I should get `r round(cm$overall[1]*20,0)` of the 20 predictions right with high confidence (95%). 
+The missclassification error (1-Accuracy) is thus equal to :  `r (1-round(cm$overall[1],2))*100`%. 
+
+The Kappa is also very high with `r round(cm$overall[2],2)`.
+
+
+```{r , echo=FALSE,warning=FALSE}
+
+
+hm<-prop.table(cm$table,2)
+
+  #HEATMAP
+heatmap.2(hm, Rowv=NA, Colv=NA, scale="row", 
+          density.info="none", trace="none",
+          cellnote=round(hm,digits=2),
+          notecex=1.0,
+          notecol="black",
+          xlab = "Predicted class",ylab="Actual class")
+
+
+
+```
+
+
+
+
+
+## Predictions on the 20 test cases
+
+As written earlier in this report, a test set is provided. It includes 20 cases that I can predict with our final model. The predictions are below:
+
+```{r , echo=FALSE,warning=FALSE}
+
+#Model predictions on the test dataset provided
+predTest <- predict(modrp, test)
+predTest
+
+
+
+```
+
+
+
+
